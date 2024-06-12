@@ -7,6 +7,7 @@ import threading
 from cryptography.fernet import Fernet
 import os
 import rsa
+import random
 import time
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -89,24 +90,38 @@ class Client:
         self.server_address = (server_address)
         self.__server_socket = None
 
-        self.proxy_speed = []
+        self.connected_proxies = {} # proxies the client is connected to
 
         self.__active_proxies = []
 
         self.__server_key = aes_generate_key()
 
-
-    def app_proxy_connect(self, proxy_addr, console, event:threading.Event, secret_code=None):
+        self.self.console = None
+    
+    def add_connection(self, proxy_addr, event:threading.Event, secret_code=None):
         status = self.get_proxy_key(proxy_addr)
 
         if not status[1]:
-            console.write(status[0])
+            self.console.write(status[0])
             return False
-        console.write(f" INFO: Connected to proxy at: {proxy_addr}")
+        self.console.write(f" INFO: Connected to proxy at: {proxy_addr}")
         proxy_address = (proxy_addr.split(":")[0], int(proxy_addr.split(":")[1]))
         proxy_public = status[0]
 
-        self.__start_outer_client(proxy_address, proxy_public, event, console, secret_code, )
+
+    def app_proxy_connect(self, proxy_addr, console, event:threading.Event, secret_code=None):
+        if not self.console:
+            self.console = console
+        status = self.get_proxy_key(proxy_addr)
+
+        if not status[1]:
+            self.console.write(status[0])
+            return False
+        self.console.write(f" INFO: Connected to proxy at: {proxy_addr}")
+        proxy_address = (proxy_addr.split(":")[0], int(proxy_addr.split(":")[1]))
+        proxy_public = status[0]
+
+        self.__start_outer_client(proxy_address, proxy_public, event, self.console, secret_code, )
 
         return True
 
@@ -222,10 +237,10 @@ class Client:
         if data == b"pass":
             return "pass"
 
-    def __start_outer_client(self, proxy_address, proxy_public, client_event:threading.Event, console , secret_code=None):
+    def __start_outer_client(self, proxy_address, proxy_public, client_event:threading.Event, secret_code=None):
         status = self.__connect_to_proxy(proxy_address=proxy_address, proxy_public=proxy_public, secret_code=secret_code)
         if not status[1]:
-            console.write(f" INFO: can not connect to proxy: {status[0]}")
+            self.console.write(f" INFO: can not connect to proxy: {status[0]}")
             return
         proxy_socket, proxy_key, session_id = status[0]
         proxy_offline = threading.Event()
@@ -241,10 +256,10 @@ class Client:
         try:
             while not (proxy_offline.is_set() or client_event.is_set()):
                 socket, _  = outer_socket.accept()
-                start_new_thread(self.__request_handler, (socket, proxy_address, proxy_key, session_id, secret_code, proxy_public,console, proxy_offline))
+                start_new_thread(self.__request_handler, (socket, proxy_address, proxy_key, session_id, secret_code, proxy_public, proxy_offline))
         except Exception as error:
             pass
-            console.write(f" ERROR:{str(error)}")
+            self.console.write(f" ERROR:{str(error)}")
 
         if not proxy_offline.is_set():
             disable_proxy()
@@ -278,10 +293,10 @@ class Client:
                 proxy_socket.close()
             pass
 
-    def __request_handler(self, socket:sock, proxy_address, proxy_key, session_id, secret_code, proxy_public,console , proxy_offline):
+    def __request_handler(self, socket:sock, proxy_address, proxy_key, session_id, secret_code, proxy_public , proxy_offline):
         status = self.__connect_to_proxy(proxy_address=proxy_address, proxy_public=proxy_public, secret_code=secret_code, session_id=session_id, proxy_key=proxy_key)
         if not status[1]:
-            console.write(f" INFO: cant connect to proxy: {status[0]}")
+            self.console.write(f" INFO: cant connect to proxy: {status[0]}")
             return
         
         proxy_socket, proxy_key, _ = status[0]
@@ -319,7 +334,7 @@ class Client:
                         socket.sendall(data)
             except sock.error as error:
                 if read_socket is proxy_socket:
-                    console.write(str(error))
+                    self.console.write(str(error))
                     proxy_offline.set()
                 proxy_socket.close()
                 return

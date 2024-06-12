@@ -23,7 +23,8 @@ class MyTabView(ctk.CTkTabview):
 
         self.proxies = []
         self.proxy_button = None
-        self.event = None
+        
+        self.events = []
 
     def update_graph(self, proxy_addr):
         if self.get() != proxy_addr:
@@ -61,36 +62,42 @@ class MyTabView(ctk.CTkTabview):
             pass
 
     def connect(self, proxy_address, button, status):
-        if self.event:
+        button.configure(state="disabled")
+        if len(self.events) != 0:
             return
-        self.event = threading.Event()
+        event = threading.Event()
+        self.events.append(event)
         time.sleep(0.1)
         secret_code=None
         if status == "1":
             dialog = ctk.CTkInputDialog(text="Enter secret password:", title="")
             secret_code = dialog.get_input()
+            if not secret_code:
+                self.events.remove(event)
+                button.configure(state="normal")
+                return
 
         self.master.console.write(f" *Attempting connection with: {proxy_address}")
         self.master.connected = True
         self.add_proxy_tab(proxy_address)
-        button.configure(text="Disconnect", command=lambda: self.disconnect(proxy_address, button, status), fg_color="dark red", hover_color="red")
+        button.configure(text="Disconnect", command=lambda: self.disconnect(proxy_address, button, status, event), fg_color="dark red", hover_color="red", state="normal")
         proxy_active = True
         try:
-            while not self.event.is_set() and proxy_active:
-                proxy_active = self.master.client.app_proxy_connect(proxy_address, self.master.console, self.event, secret_code=secret_code)
+            while (not event.is_set()) and proxy_active:
+                proxy_active = self.master.client.app_proxy_connect(proxy_address, self.master.console, event, secret_code=secret_code)
         except:
             pass
         self.delete_proxy_tab(proxy_address)
-        if self.event:
-            self.disconnect(proxy_address, button, status)
+        if event in self.events:
+            self.disconnect(proxy_address, button, status, event)
 
-    def disconnect(self, proxy_address, button, status):
-        if self.event:
-            self.event.set()
+    def disconnect(self, proxy_address, button, status, event):
+        if event in self.events:
+            event.set()
         self.master.console.write(f" *Closing connection with proxy: {proxy_address}")
         time.sleep(1) # waiting for the client to close connection
         button.configure(text="Connect", command=lambda: start_new_thread(self.connect, (proxy_address, button, status)), fg_color="dark blue", hover_color="blue")
-        self.event = None
+        self.events.remove(event)
         self.master.connected = False
 
     def create_proxy_frame(self, addr, status):
