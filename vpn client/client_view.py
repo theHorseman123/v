@@ -8,7 +8,6 @@ from client_controller import *
 import threading
 import socket as sock
 import time
-import _thread
 
 class MyTabView(ctk.CTkTabview):
     def __init__(self, master, **kwargs):
